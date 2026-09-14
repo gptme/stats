@@ -120,13 +120,20 @@ def save(fig, name: str) -> None:
     plt.close(fig)
 
 
-def render_stars(stars: list[str], as_of: str) -> None:
+def render_stars(stars: list[str], daily: list[dict[str, str]], as_of: str) -> None:
     per_day = Counter(s[:10] for s in stars)
     dates, totals, running = [], [], 0
     for day in sorted(per_day):
         running += per_day[day]
         dates.append(dt.date.fromisoformat(day))
         totals.append(running)
+    # Per-star timestamps need a user token; when they stop updating, continue the
+    # curve from the daily stargazers_count snapshots.
+    for row in sorted(daily, key=lambda r: r["date"]):
+        day = dt.date.fromisoformat(row["date"])
+        if day > dates[-1] and row.get("stars", "").isdigit():
+            dates.append(day)
+            totals.append(int(row["stars"]))
     fig, ax = new_figure("gptme GitHub stars", f"Cumulative stargazers of gptme/gptme, as of {as_of}")
     ax.fill_between(dates, totals, color=BLUE, alpha=0.1, linewidth=0, step="post")
     ax.step(dates, totals, where="post", color=BLUE, linewidth=2)
@@ -265,7 +272,7 @@ def main() -> None:
         raise SystemExit("missing data, run collect.py first")
 
     summary = build_summary(daily, stars, pypi)
-    render_stars(stars, summary["generated_at"])
+    render_stars(stars, daily, summary["generated_at"])
     render_pypi(pypi)
     has_downloads = render_downloads(daily)
     (DATA / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

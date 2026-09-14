@@ -29,6 +29,9 @@ jobs:
       - name: Collect
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional user token (public read is enough). Without it, per-star timestamps
+          # stop updating and the star chart continues from daily stargazers_count.
+          STATS_GH_TOKEN: ${{ secrets.STATS_GH_TOKEN }}
           FULL_STARS: ${{ inputs.full_stars || false }}
         run: |
           if [ "$FULL_STARS" = "true" ]; then

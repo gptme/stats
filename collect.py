@@ -60,6 +60,14 @@ def log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
+class TokenNotAccepted(RuntimeError):
+    """401, or 403 "Resource not accessible by integration".
+
+    Listing stargazers with timestamps requires a user token: the workflow's
+    repo-scoped GITHUB_TOKEN gets a 403 and unauthenticated requests get a 401.
+    """
+
+
 class Http:
     """requests wrapper with retries for 429, 5xx, network errors and GitHub rate limits."""
 
@@ -70,7 +78,11 @@ class Http:
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        token = (
+            os.environ.get("STATS_GH_TOKEN")
+            or os.environ.get("GITHUB_TOKEN")
+            or os.environ.get("GH_TOKEN")
+        )
         if token:
             self.gh_headers["Authorization"] = f"Bearer {token}"
         else:
@@ -102,6 +114,12 @@ class Http:
                         or "rate limit" in resp.text.lower()
                     )
                 )
+                if resp.status_code == 401 or (
+                    resp.status_code == 403 and "not accessible by integration" in resp.text
+                ):
+                    raise TokenNotAccepted(
+                        f"GET {resp.url} -> HTTP {resp.status_code}: {resp.text[:300]}"
+                    )
                 if not (rate_limited or resp.status_code >= 500):
                     raise RuntimeError(
                         f"GET {resp.url} -> HTTP {resp.status_code}: {resp.text[:300]}"
@@ -232,6 +250,16 @@ def fetch_stars_incremental(http: Http, stored: list[str], total: int) -> list[s
 
 
 def collect_stars(http: Http, stored: list[str], total: int, force_full: bool) -> list[str]:
+    try:
+        return _collect_stars(http, stored, total, force_full)
+    except TokenNotAccepted as e:
+        # Per-star timestamps need a user token (STATS_GH_TOKEN secret). Without one, keep
+        # the stored history; daily.csv still records the stargazers_count for the chart.
+        log(f"warning: star timestamps unavailable, keeping stars.csv as is ({e})")
+        return stored
+
+
+def _collect_stars(http: Http, stored: list[str], total: int, force_full: bool) -> list[str]:
     stars = None if force_full else fetch_stars_incremental(http, stored, total)
     if stars is not None and len(stars) != total:
         # Unstars (or stars racing the count) make the stored list diverge; resync from scratch.
