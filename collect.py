@@ -232,13 +232,21 @@ def fetch_stars_incremental(http: Http, stored: list[str], total: int) -> list[s
 
 
 def collect_stars(http: Http, stored: list[str], total: int, force_full: bool) -> list[str]:
-    stars = None if force_full else fetch_stars_incremental(http, stored, total)
-    if stars is not None and len(stars) != total:
-        # Unstars (or stars racing the count) make the stored list diverge; resync from scratch.
-        log(f"stars: incremental result {len(stars)} != stargazers_count {total}, full resync")
-        stars = None
-    if stars is None:
-        stars = fetch_all_stars(http)
+    try:
+        stars = None if force_full else fetch_stars_incremental(http, stored, total)
+        if stars is not None and len(stars) != total:
+            # Unstars (or stars racing the count) make the stored list diverge; resync from scratch.
+            log(f"stars: incremental result {len(stars)} != stargazers_count {total}, full resync")
+            stars = None
+        if stars is None:
+            stars = fetch_all_stars(http)
+    except RuntimeError as e:
+        if "HTTP 403" in str(e):
+            # Token lacks stargazers permission ("Resource not accessible by integration").
+            # Keep stored data rather than crashing the whole collect run.
+            log(f"stars: skipping update — access denied (403); using stored {len(stored)} rows")
+            return stored
+        raise
     if stored and len(stars) < 0.9 * len(stored):
         raise ValueError(f"stars: refusing to shrink from {len(stored)} to {len(stars)} rows")
     return stars
