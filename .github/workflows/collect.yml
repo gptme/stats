@@ -29,8 +29,13 @@ jobs:
       - name: Collect
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FULL_STARS: ${{ inputs.full_stars && '--full-stars' || '' }}
-        run: uv run --locked collect.py $FULL_STARS
+          FULL_STARS: ${{ inputs.full_stars || false }}
+        run: |
+          if [ "$FULL_STARS" = "true" ]; then
+            uv run --locked collect.py --full-stars
+          else
+            uv run --locked collect.py
+          fi
 
       - name: Render
         run: uv run --locked render.py
