@@ -1,25 +1,25 @@
 {
-  "generated_at": "2026-09-29",
+  "generated_at": "2026-09-30",
   "source": "https://github.com/gptme/stats",
   "repo": "gptme/gptme",
-  "stars": 4437,
-  "stars_last_30d": 13,
-  "forks": 443,
+  "stars": 4439,
+  "stars_last_30d": 12,
+  "forks": 445,
   "watchers": 40,
-  "open_issues": 4,
-  "open_prs": 22,
+  "open_issues": 3,
+  "open_prs": 19,
   "contributors": 55,
-  "release_downloads": 4409,
+  "release_downloads": 4453,
   "tauri_release_downloads": 77,
   "pypi": {
     "package": "gptme",
     "last_day": {
-      "date": "2026-09-28",
-      "downloads": 2597
+      "date": "2026-09-29",
+      "downloads": 1023
     },
-    "last_7d": 8890,
-    "last_30d": 30868,
-    "tracked_total": 200133,
+    "last_7d": 9172,
+    "last_30d": 30573,
+    "tracked_total": 201156,
     "tracked_since": "2026-03-17"
   }
 }
