@@ -19,23 +19,23 @@ Embed the star chart elsewhere with:
 ## Latest numbers
 
 <!-- stats:start -->
-_Latest snapshot: 2026-10-05 (UTC). Machine-readable: [`data/summary.json`](data/summary.json)._
+_Latest snapshot: 2026-10-06 (UTC). Machine-readable: [`data/summary.json`](data/summary.json)._
 
 | Metric | Value |
 |---|---:|
 | GitHub stars | 4,445 |
-| Stars gained, last 30 days | 5 |
-| Forks | 448 |
+| Stars gained, last 30 days | 4 |
+| Forks | 449 |
 | Watchers | 40 |
 | Contributors | 56 |
-| Open issues | 6 |
-| Open pull requests | 46 |
-| Release asset downloads (gptme/gptme) | 4,932 |
+| Open issues | 5 |
+| Open pull requests | 52 |
+| Release asset downloads (gptme/gptme) | 4,979 |
 | Release asset downloads (gptme/gptme-tauri) | 77 |
-| PyPI downloads, 2026-10-04 | 905 |
-| PyPI downloads, last 7 days | 10,457 |
-| PyPI downloads, last 30 days | 31,499 |
-| PyPI downloads tracked since 2026-03-17 | 207,993 |
+| PyPI downloads, 2026-10-05 | 1,252 |
+| PyPI downloads, last 7 days | 9,112 |
+| PyPI downloads, last 30 days | 32,174 |
+| PyPI downloads tracked since 2026-03-17 | 209,245 |
 
 ![GitHub release downloads](charts/downloads.svg)
 <!-- stats:end -->
