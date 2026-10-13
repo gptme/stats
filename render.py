@@ -145,50 +145,51 @@ def render_stars(stars: list[str], daily: list[dict[str, str]], as_of: str) -> N
 
 
 def star_totals(stars: list[str], daily: list[dict[str, str]]) -> dict[dt.date, int]:
-    """Cumulative star count for every calendar day, from the first star to the last snapshot.
+    """Star count for every calendar day, from the first star to the last snapshot.
 
-    Days covered by stars.csv count current stargazers by the day they starred. After
-    that, the series continues from the daily stargazers_count snapshots (net of unstars).
+    From the first daily.csv snapshot on, this is the snapshot stargazers_count (net of
+    unstars), whether or not stars.csv is current. Before snapshots existed, it is
+    stars.csv (current stargazers by the day they starred), shifted by a constant so the
+    two meet at the first snapshot; only day-over-day differences are meaningful there.
     Missing snapshot days are filled by linear interpolation, so a gap in collection
     spreads its stars over the gap instead of showing up as a one-day spike.
     """
+    snaps = {
+        dt.date.fromisoformat(r["date"]): int(r["stars"]) for r in daily if r.get("stars", "").isdigit()
+    }
     per_day = Counter(dt.date.fromisoformat(s[:10]) for s in stars)
-    known: dict[dt.date, int] = {}
-    running = 0
-    for day in sorted(per_day):
-        running += per_day[day]
-        known[day] = running
-    last_star_day = max(known)
-    for row in daily:
-        day = dt.date.fromisoformat(row["date"])
-        if day > last_star_day and row.get("stars", "").isdigit():
-            known[day] = int(row["stars"])
-    days = sorted(known)
+    first_snap = min(snaps) if snaps else max(per_day) + dt.timedelta(days=1)
     totals: dict[dt.date, int] = {}
-    for a, b in zip(days, days[1:] + [None]):
-        totals[a] = known[a]
-        if b is None:
-            break
+    if per_day:
+        day, running = min(per_day), 0
+        while day <= first_snap:
+            running += per_day.get(day, 0)
+            totals[day] = running
+            day += dt.timedelta(days=1)
+        if first_snap in snaps:
+            offset = snaps[first_snap] - totals[first_snap]
+            totals = {d: v + offset for d, v in totals.items()}
+    days = sorted(snaps)
+    for a, b in zip(days, days[1:]):
         gap = (b - a).days
         for i in range(1, gap):
-            if b <= last_star_day:
-                # stars.csv has an exact count for every day; days without a row had no stars.
-                totals[a + dt.timedelta(days=i)] = known[a]
-            else:
-                totals[a + dt.timedelta(days=i)] = known[a] + round((known[b] - known[a]) * i / gap)
-    return totals
+            totals[a + dt.timedelta(days=i)] = snaps[a] + round((snaps[b] - snaps[a]) * i / gap)
+    totals.update(snaps)
+    return dict(sorted(totals.items()))
 
 
-def render_star_growth(totals: dict[dt.date, int]) -> None:
+def render_star_growth(totals: dict[dt.date, int]) -> bool:
     days = sorted(totals)
+    if len(days) < 2:
+        return False
     added = {d: totals[d] - totals[d - dt.timedelta(days=1)] for d in days[1:]}
     end = days[-1]
     start = max(days[1], end - dt.timedelta(days=STAR_GROWTH_DAYS - 1))
     shown = [d for d in sorted(added) if d >= start]
     xs, ys = rolling_mean(sorted(added), added, window=7)
     avg = [(x, y) for x, y in zip(xs, ys) if x >= start]
-    week = sum(added[end - dt.timedelta(days=i)] for i in range(7))
-    prev = sum(added[end - dt.timedelta(days=i)] for i in range(7, 14))
+    week = sum(added.get(end - dt.timedelta(days=i), 0) for i in range(7))
+    prev = sum(added.get(end - dt.timedelta(days=i), 0) for i in range(7, 14))
     fig, ax = new_figure(
         "GitHub stars added per day (7-day rolling avg)",
         f"Net new stargazers of gptme/gptme per day, last {STAR_GROWTH_DAYS} days. "
@@ -204,6 +205,7 @@ def render_star_growth(totals: dict[dt.date, int]) -> None:
     ax.set_ylim(lo * 1.08, max(1, max(added[d] for d in shown)) * 1.08)
     ax.legend(loc="upper left", fontsize=9, labelcolor=INK_2, handlelength=1.5)
     save(fig, "stars_growth.svg")
+    return True
 
 
 def rolling_mean(dates: list[dt.date], values: dict[dt.date, int], window: int = 30):
