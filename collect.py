@@ -7,8 +7,9 @@ All network requests run first. Files are written (atomically) only after
 every source has been fetched and validated, so a failed run never leaves a
 partial or garbage row behind.
 
-Needs no secrets beyond an optional GITHUB_TOKEN (or GH_TOKEN), which only
-raises the GitHub API rate limit.
+Needs no secrets beyond an optional GITHUB_TOKEN (or GH_TOKEN). In Actions the built-in
+token raises the rate limit; per-star timestamps (stars.csv) are only refreshed with a
+user token, e.g. GITHUB_TOKEN=$(gh auth token) locally. See TokenNotAccepted.
 """
 
 from __future__ import annotations
@@ -63,8 +64,10 @@ def log(msg: str) -> None:
 class TokenNotAccepted(RuntimeError):
     """401, or 403 "Resource not accessible by integration".
 
-    Listing stargazers with timestamps requires a user token: the workflow's
-    repo-scoped GITHUB_TOKEN gets a 403 and unauthenticated requests get a 401.
+    Listing stargazers requires a user token. Unauthenticated requests get a 401, and the
+    workflow's GITHUB_TOKEN gets a 403 "Resource not accessible by integration" from REST
+    (with or without the star+json media type) and from GraphQL's `stargazers` alike
+    (checked 2026-10-13). Reading another public repo's metadata works with it.
     """
 
 
@@ -78,11 +81,7 @@ class Http:
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        token = (
-            os.environ.get("STATS_GH_TOKEN")
-            or os.environ.get("GITHUB_TOKEN")
-            or os.environ.get("GH_TOKEN")
-        )
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         if token:
             self.gh_headers["Authorization"] = f"Bearer {token}"
         else:
@@ -253,8 +252,8 @@ def collect_stars(http: Http, stored: list[str], total: int, force_full: bool) -
     try:
         return _collect_stars(http, stored, total, force_full)
     except TokenNotAccepted as e:
-        # Per-star timestamps need a user token (STATS_GH_TOKEN secret). Without one, keep
-        # the stored history; daily.csv still records the stargazers_count for the chart.
+        # Per-star timestamps need a user token. Without one, keep the stored history;
+        # daily.csv still records stargazers_count, which the charts continue from.
         log(f"warning: star timestamps unavailable, keeping stars.csv as is ({e})")
         return stored
 

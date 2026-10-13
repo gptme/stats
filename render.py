@@ -21,7 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
+from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -29,7 +29,6 @@ CHARTS = ROOT / "charts"
 README = ROOT / "README.md"
 START, END = "<!-- stats:start -->", "<!-- stats:end -->"
 MIN_DAYS_FOR_DOWNLOADS_CHART = 14
-STAR_GROWTH_DAYS = 365  # window of the star growth chart; the 2024 launch spike would flatten anything wider
 
 # Light chart card; reads fine embedded on both GitHub light and dark pages.
 SURFACE = "#fcfcfb"
@@ -184,26 +183,47 @@ def render_star_growth(totals: dict[dt.date, int]) -> bool:
     if len(days) < 2:
         return False
     added = {d: totals[d] - totals[d - dt.timedelta(days=1)] for d in days[1:]}
-    end = days[-1]
-    start = max(days[1], end - dt.timedelta(days=STAR_GROWTH_DAYS - 1))
-    shown = [d for d in sorted(added) if d >= start]
-    xs, ys = rolling_mean(sorted(added), added, window=7)
-    avg = [(x, y) for x, y in zip(xs, ys) if x >= start]
-    week = sum(added.get(end - dt.timedelta(days=i), 0) for i in range(7))
-    prev = sum(added.get(end - dt.timedelta(days=i), 0) for i in range(7, 14))
+    shown = sorted(added)
+    end = shown[-1]
+    xs, ys = rolling_mean(shown, added, window=7)
+
+    def week_ending(d: dt.date) -> int:
+        return sum(added.get(d - dt.timedelta(days=i), 0) for i in range(7))
+
+    week, prev = week_ending(end), week_ending(end - dt.timedelta(days=7))
     fig, ax = new_figure(
         "GitHub stars added per day (7-day rolling avg)",
-        f"Net new stargazers of gptme/gptme per day, last {STAR_GROWTH_DAYS} days. "
-        f"Last 7 days: {week:,}, previous 7: {prev:,}",
+        f"Net new stargazers of gptme/gptme per day, log scale. Last 7 days: {week:,}, previous 7: {prev:,}",
     )
-    ax.bar(shown, [added[d] for d in shown], width=0.8, color=BLUE_LIGHT, linewidth=0, label="Daily")
-    if avg:
-        ax.plot([x for x, _ in avg], [y for _, y in avg], color=BLUE, linewidth=2, label="7-day average")
-        end_label(ax, avg[-1][0], avg[-1][1], f"{avg[-1][1]:,.1f}/day")
+    ax.bar(shown, [added[d] for d in shown], width=1, color=BLUE_LIGHT, linewidth=0, label="Daily")
+    if xs:
+        ax.plot(xs, ys, color=BLUE, linewidth=1.5, label="7-day average")
+        end_label(ax, xs[-1], ys[-1], f"{ys[-1]:,.1f}/day")
+    # Daily counts span 0 to a few hundred (the October 2024 launch). A log scale keeps
+    # a quiet week at 1/day readable next to that spike, and equal ratios get equal
+    # heights, so "twice last week" looks the same at any level. symlog is linear in
+    # [-1, 1] so zero and unstar days still have a place.
+    hi = max(added.values())
+    ax.set_yscale("symlog", linthresh=1, linscale=0.4)
+    ticks = [0] + [v for v in (1, 3, 10, 30, 100, 300, 1000, 3000) if v <= hi * 1.5]
+    ax.yaxis.set_major_locator(FixedLocator(ticks))
+    ax.yaxis.set_minor_locator(FixedLocator([]))
+    ax.yaxis.set_major_formatter(comma)
+    ax.set_ylim(min(-0.6, min(added.values()) * 1.05), max(2, hi) * 1.6)
     ax.axhline(0, color=BASELINE, linewidth=1, zorder=1)
-    ax.set_xlim(start - dt.timedelta(days=1), end + dt.timedelta(days=1))
-    lo = min(0, min(added[d] for d in shown))
-    ax.set_ylim(lo * 1.08, max(1, max(added[d] for d in shown)) * 1.08)
+    ax.set_xlim(shown[0], end + dt.timedelta(days=1))
+    peak = max(shown, key=week_ending)
+    if week_ending(peak) >= 4 * max(1, week):
+        top = max(shown[max(0, shown.index(peak) - 6) : shown.index(peak) + 1], key=added.__getitem__)
+        ax.annotate(
+            f"busiest week: {week_ending(peak):,} stars (to {peak:%Y-%m-%d})",
+            (top, added[top]),
+            xytext=(8, 0),
+            textcoords="offset points",
+            va="center",
+            fontsize=8.5,
+            color=INK_2,
+        )
     ax.legend(loc="upper left", fontsize=9, labelcolor=INK_2, handlelength=1.5)
     save(fig, "stars_growth.svg")
     return True
