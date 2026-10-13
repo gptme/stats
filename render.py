@@ -195,7 +195,10 @@ def render_star_growth(totals: dict[dt.date, int]) -> bool:
         "GitHub stars added per day (7-day rolling avg)",
         f"Net new stargazers of gptme/gptme per day, log scale. Last 7 days: {week:,}, previous 7: {prev:,}",
     )
-    ax.bar(shown, [added[d] for d in shown], width=1, color=BLUE_LIGHT, linewidth=0, label="Daily")
+    # One filled step path instead of ~1,000 bar patches keeps the SVG (and daily diffs) small.
+    ax.fill_between(
+        shown, [added[d] for d in shown], step="mid", color=BLUE_LIGHT, linewidth=0, label="Daily"
+    )
     if xs:
         ax.plot(xs, ys, color=BLUE, linewidth=1.5, label="7-day average")
         end_label(ax, xs[-1], ys[-1], f"{ys[-1]:,.1f}/day")
