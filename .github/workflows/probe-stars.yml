@@ -1,0 +1,20 @@
+# TEMPORARY: probe which star endpoints the workflow GITHUB_TOKEN can read. Removed before merge.
+name: probe stars
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "== REST stargazers star+json"
+          curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github.star+json" "https://api.github.com/repos/gptme/gptme/stargazers?per_page=1&page=4000"
+          echo "== REST stargazers plain"
+          curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/gptme/gptme/stargazers?per_page=1"
+          echo "== GraphQL stargazers"
+          curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/graphql \
+            -d '{"query":"{ repository(owner:\"gptme\", name:\"gptme\") { stargazers(first:2, orderBy:{field:STARRED_AT, direction:DESC}) { totalCount edges { starredAt } } } }"}'
+          echo
