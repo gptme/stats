@@ -158,7 +158,8 @@ def star_totals(stars: list[str], daily: list[dict[str, str]]) -> dict[dt.date, 
         dt.date.fromisoformat(r["date"]): int(r["stars"]) for r in daily if r.get("stars", "").isdigit()
     }
     per_day = Counter(dt.date.fromisoformat(s[:10]) for s in stars)
-    first_snap = min(snaps) if snaps else max(per_day) + dt.timedelta(days=1)
+    # Without snapshots, stars.csv is all there is; windows it doesn't cover stay n/a.
+    first_snap = min(snaps) if snaps else max(per_day, default=dt.date.min)
     totals: dict[dt.date, int] = {}
     if per_day:
         day, running = min(per_day), 0
