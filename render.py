@@ -29,6 +29,7 @@ CHARTS = ROOT / "charts"
 README = ROOT / "README.md"
 START, END = "<!-- stats:start -->", "<!-- stats:end -->"
 MIN_DAYS_FOR_DOWNLOADS_CHART = 14
+STAR_GROWTH_DAYS = 365  # window of the star growth chart; the 2024 launch spike would flatten anything wider
 
 # Light chart card; reads fine embedded on both GitHub light and dark pages.
 SURFACE = "#fcfcfb"
@@ -143,6 +144,68 @@ def render_stars(stars: list[str], daily: list[dict[str, str]], as_of: str) -> N
     save(fig, "stars.svg")
 
 
+def star_totals(stars: list[str], daily: list[dict[str, str]]) -> dict[dt.date, int]:
+    """Cumulative star count for every calendar day, from the first star to the last snapshot.
+
+    Days covered by stars.csv count current stargazers by the day they starred. After
+    that, the series continues from the daily stargazers_count snapshots (net of unstars).
+    Missing snapshot days are filled by linear interpolation, so a gap in collection
+    spreads its stars over the gap instead of showing up as a one-day spike.
+    """
+    per_day = Counter(dt.date.fromisoformat(s[:10]) for s in stars)
+    known: dict[dt.date, int] = {}
+    running = 0
+    for day in sorted(per_day):
+        running += per_day[day]
+        known[day] = running
+    last_star_day = max(known)
+    for row in daily:
+        day = dt.date.fromisoformat(row["date"])
+        if day > last_star_day and row.get("stars", "").isdigit():
+            known[day] = int(row["stars"])
+    days = sorted(known)
+    totals: dict[dt.date, int] = {}
+    for a, b in zip(days, days[1:] + [None]):
+        totals[a] = known[a]
+        if b is None:
+            break
+        gap = (b - a).days
+        for i in range(1, gap):
+            if b <= last_star_day:
+                # stars.csv has an exact count for every day; days without a row had no stars.
+                totals[a + dt.timedelta(days=i)] = known[a]
+            else:
+                totals[a + dt.timedelta(days=i)] = known[a] + round((known[b] - known[a]) * i / gap)
+    return totals
+
+
+def render_star_growth(totals: dict[dt.date, int]) -> None:
+    days = sorted(totals)
+    added = {d: totals[d] - totals[d - dt.timedelta(days=1)] for d in days[1:]}
+    end = days[-1]
+    start = max(days[1], end - dt.timedelta(days=STAR_GROWTH_DAYS - 1))
+    shown = [d for d in sorted(added) if d >= start]
+    xs, ys = rolling_mean(sorted(added), added, window=7)
+    avg = [(x, y) for x, y in zip(xs, ys) if x >= start]
+    week = sum(added[end - dt.timedelta(days=i)] for i in range(7))
+    prev = sum(added[end - dt.timedelta(days=i)] for i in range(7, 14))
+    fig, ax = new_figure(
+        "GitHub stars added per day (7-day rolling avg)",
+        f"Net new stargazers of gptme/gptme per day, last {STAR_GROWTH_DAYS} days. "
+        f"Last 7 days: {week:,}, previous 7: {prev:,}",
+    )
+    ax.bar(shown, [added[d] for d in shown], width=0.8, color=BLUE_LIGHT, linewidth=0, label="Daily")
+    if avg:
+        ax.plot([x for x, _ in avg], [y for _, y in avg], color=BLUE, linewidth=2, label="7-day average")
+        end_label(ax, avg[-1][0], avg[-1][1], f"{avg[-1][1]:,.1f}/day")
+    ax.axhline(0, color=BASELINE, linewidth=1, zorder=1)
+    ax.set_xlim(start - dt.timedelta(days=1), end + dt.timedelta(days=1))
+    lo = min(0, min(added[d] for d in shown))
+    ax.set_ylim(lo * 1.08, max(1, max(added[d] for d in shown)) * 1.08)
+    ax.legend(loc="upper left", fontsize=9, labelcolor=INK_2, handlelength=1.5)
+    save(fig, "stars_growth.svg")
+
+
 def rolling_mean(dates: list[dt.date], values: dict[dt.date, int], window: int = 30):
     xs, ys = [], []
     first = dates[0]
@@ -196,10 +259,13 @@ def pypi_window(pypi: list[dict[str, str]], days: int) -> int:
     return sum(int(r["downloads"]) for r in pypi[-days:])
 
 
-def build_summary(daily, stars, pypi) -> dict:
+def build_summary(daily, totals, pypi) -> dict:
     latest = daily[-1]
     as_of = dt.date.fromisoformat(latest["date"])
-    cutoff = (as_of - dt.timedelta(days=30)).isoformat()
+
+    def stars_gained(days: int, offset: int = 0) -> int | None:
+        hi, lo = as_of - dt.timedelta(days=offset), as_of - dt.timedelta(days=offset + days)
+        return totals[hi] - totals[lo] if hi in totals and lo in totals else None
 
     def num(key: str) -> int | None:
         return int(latest[key]) if latest.get(key) else None
@@ -209,7 +275,9 @@ def build_summary(daily, stars, pypi) -> dict:
         "source": "https://github.com/gptme/stats",
         "repo": "gptme/gptme",
         "stars": num("stars"),
-        "stars_last_30d": sum(1 for s in stars if s[:10] > cutoff),
+        "stars_last_7d": stars_gained(7),
+        "stars_prev_7d": stars_gained(7, offset=7),
+        "stars_last_30d": stars_gained(30),
         "forks": num("forks"),
         "watchers": num("watchers"),
         "open_issues": num("open_issues"),
@@ -241,6 +309,8 @@ def update_readme(s: dict, has_downloads_chart: bool) -> None:
         "| Metric | Value |",
         "|---|---:|",
         f"| GitHub stars | {fmt(s['stars'])} |",
+        f"| Stars gained, last 7 days | {fmt(s['stars_last_7d'])} |",
+        f"| Stars gained, previous 7 days | {fmt(s['stars_prev_7d'])} |",
         f"| Stars gained, last 30 days | {fmt(s['stars_last_30d'])} |",
         f"| Forks | {fmt(s['forks'])} |",
         f"| Watchers | {fmt(s['watchers'])} |",
@@ -271,8 +341,10 @@ def main() -> None:
     if not (daily and stars and pypi):
         raise SystemExit("missing data, run collect.py first")
 
-    summary = build_summary(daily, stars, pypi)
+    totals = star_totals(stars, daily)
+    summary = build_summary(daily, totals, pypi)
     render_stars(stars, daily, summary["generated_at"])
+    render_star_growth(totals)
     render_pypi(pypi)
     has_downloads = render_downloads(daily)
     (DATA / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
