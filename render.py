@@ -21,7 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
+from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -143,6 +143,95 @@ def render_stars(stars: list[str], daily: list[dict[str, str]], as_of: str) -> N
     save(fig, "stars.svg")
 
 
+def star_totals(stars: list[str], daily: list[dict[str, str]]) -> dict[dt.date, int]:
+    """Star count for every calendar day, from the first star to the last snapshot.
+
+    From the first daily.csv snapshot on, this is the snapshot stargazers_count (net of
+    unstars), whether or not stars.csv is current. Before snapshots existed, it is
+    stars.csv (current stargazers by the day they starred), shifted by a constant so the
+    two meet at the first snapshot; only day-over-day differences are meaningful there.
+    Missing snapshot days are filled by linear interpolation, so a gap in collection
+    spreads its stars over the gap instead of showing up as a one-day spike.
+    """
+    snaps = {
+        dt.date.fromisoformat(r["date"]): int(r["stars"]) for r in daily if r.get("stars", "").isdigit()
+    }
+    per_day = Counter(dt.date.fromisoformat(s[:10]) for s in stars)
+    # Without snapshots, stars.csv is all there is; windows it doesn't cover stay n/a.
+    first_snap = min(snaps) if snaps else max(per_day, default=dt.date.min)
+    totals: dict[dt.date, int] = {}
+    if per_day:
+        day, running = min(per_day), 0
+        while day <= first_snap:
+            running += per_day.get(day, 0)
+            totals[day] = running
+            day += dt.timedelta(days=1)
+        if first_snap in snaps:
+            offset = snaps[first_snap] - totals[first_snap]
+            totals = {d: v + offset for d, v in totals.items()}
+    days = sorted(snaps)
+    for a, b in zip(days, days[1:]):
+        gap = (b - a).days
+        for i in range(1, gap):
+            totals[a + dt.timedelta(days=i)] = snaps[a] + round((snaps[b] - snaps[a]) * i / gap)
+    totals.update(snaps)
+    return dict(sorted(totals.items()))
+
+
+def render_star_growth(totals: dict[dt.date, int]) -> bool:
+    days = sorted(totals)
+    if len(days) < 2:
+        return False
+    added = {d: totals[d] - totals[d - dt.timedelta(days=1)] for d in days[1:]}
+    shown = sorted(added)
+    end = shown[-1]
+    xs, ys = rolling_mean(shown, added, window=7)
+
+    def week_ending(d: dt.date) -> int:
+        return sum(added.get(d - dt.timedelta(days=i), 0) for i in range(7))
+
+    week, prev = week_ending(end), week_ending(end - dt.timedelta(days=7))
+    fig, ax = new_figure(
+        "GitHub stars added per day (7-day rolling avg)",
+        f"Net new stargazers of gptme/gptme per day, log scale. Last 7 days: {week:,}, previous 7: {prev:,}",
+    )
+    # One filled step path instead of ~1,000 bar patches keeps the SVG (and daily diffs) small.
+    ax.fill_between(
+        shown, [added[d] for d in shown], step="mid", color=BLUE_LIGHT, linewidth=0, label="Daily"
+    )
+    if xs:
+        ax.plot(xs, ys, color=BLUE, linewidth=1.5, label="7-day average")
+        end_label(ax, xs[-1], ys[-1], f"{ys[-1]:,.1f}/day")
+    # Daily counts span 0 to a few hundred (the October 2024 launch). A log scale keeps
+    # a quiet week at 1/day readable next to that spike, and equal ratios get equal
+    # heights, so "twice last week" looks the same at any level. symlog is linear in
+    # [-1, 1] so zero and unstar days still have a place.
+    hi = max(added.values())
+    ax.set_yscale("symlog", linthresh=1, linscale=0.4)
+    ticks = [0] + [v for v in (1, 3, 10, 30, 100, 300, 1000, 3000) if v <= hi * 1.5]
+    ax.yaxis.set_major_locator(FixedLocator(ticks))
+    ax.yaxis.set_minor_locator(FixedLocator([]))
+    ax.yaxis.set_major_formatter(comma)
+    ax.set_ylim(min(-0.6, min(added.values()) * 1.05), max(2, hi) * 1.6)
+    ax.axhline(0, color=BASELINE, linewidth=1, zorder=1)
+    ax.set_xlim(shown[0], end + dt.timedelta(days=1))
+    peak = max(shown, key=week_ending)
+    if week_ending(peak) >= 4 * max(1, week):
+        top = max(shown[max(0, shown.index(peak) - 6) : shown.index(peak) + 1], key=added.__getitem__)
+        ax.annotate(
+            f"busiest week: {week_ending(peak):,} stars (to {peak:%Y-%m-%d})",
+            (top, added[top]),
+            xytext=(8, 0),
+            textcoords="offset points",
+            va="center",
+            fontsize=8.5,
+            color=INK_2,
+        )
+    ax.legend(loc="upper left", fontsize=9, labelcolor=INK_2, handlelength=1.5)
+    save(fig, "stars_growth.svg")
+    return True
+
+
 def rolling_mean(dates: list[dt.date], values: dict[dt.date, int], window: int = 30):
     xs, ys = [], []
     first = dates[0]
@@ -196,10 +285,13 @@ def pypi_window(pypi: list[dict[str, str]], days: int) -> int:
     return sum(int(r["downloads"]) for r in pypi[-days:])
 
 
-def build_summary(daily, stars, pypi) -> dict:
+def build_summary(daily, totals, pypi) -> dict:
     latest = daily[-1]
     as_of = dt.date.fromisoformat(latest["date"])
-    cutoff = (as_of - dt.timedelta(days=30)).isoformat()
+
+    def stars_gained(days: int, offset: int = 0) -> int | None:
+        hi, lo = as_of - dt.timedelta(days=offset), as_of - dt.timedelta(days=offset + days)
+        return totals[hi] - totals[lo] if hi in totals and lo in totals else None
 
     def num(key: str) -> int | None:
         return int(latest[key]) if latest.get(key) else None
@@ -209,7 +301,9 @@ def build_summary(daily, stars, pypi) -> dict:
         "source": "https://github.com/gptme/stats",
         "repo": "gptme/gptme",
         "stars": num("stars"),
-        "stars_last_30d": sum(1 for s in stars if s[:10] > cutoff),
+        "stars_last_7d": stars_gained(7),
+        "stars_prev_7d": stars_gained(7, offset=7),
+        "stars_last_30d": stars_gained(30),
         "forks": num("forks"),
         "watchers": num("watchers"),
         "open_issues": num("open_issues"),
@@ -241,6 +335,8 @@ def update_readme(s: dict, has_downloads_chart: bool) -> None:
         "| Metric | Value |",
         "|---|---:|",
         f"| GitHub stars | {fmt(s['stars'])} |",
+        f"| Stars gained, last 7 days | {fmt(s['stars_last_7d'])} |",
+        f"| Stars gained, previous 7 days | {fmt(s['stars_prev_7d'])} |",
         f"| Stars gained, last 30 days | {fmt(s['stars_last_30d'])} |",
         f"| Forks | {fmt(s['forks'])} |",
         f"| Watchers | {fmt(s['watchers'])} |",
@@ -271,8 +367,10 @@ def main() -> None:
     if not (daily and stars and pypi):
         raise SystemExit("missing data, run collect.py first")
 
-    summary = build_summary(daily, stars, pypi)
+    totals = star_totals(stars, daily)
+    summary = build_summary(daily, totals, pypi)
     render_stars(stars, daily, summary["generated_at"])
+    render_star_growth(totals)
     render_pypi(pypi)
     has_downloads = render_downloads(daily)
     (DATA / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

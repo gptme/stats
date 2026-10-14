@@ -8,6 +8,8 @@ Usage and community stats for [gptme](https://github.com/gptme/gptme), collected
 
 [![gptme GitHub stars over time](charts/stars.svg)](data/stars.csv)
 
+[![GitHub stars added per day, 7-day rolling average](charts/stars_growth.svg)](data/daily.csv)
+
 [![gptme PyPI downloads](charts/pypi.svg)](data/pypi_daily.csv)
 
 Embed the star chart elsewhere with:
@@ -24,7 +26,9 @@ _Latest snapshot: 2026-10-13 (UTC). Machine-readable: [`data/summary.json`](data
 | Metric | Value |
 |---|---:|
 | GitHub stars | 4,448 |
-| Stars gained, last 30 days | 1 |
+| Stars gained, last 7 days | 3 |
+| Stars gained, previous 7 days | 8 |
+| Stars gained, last 30 days | 36 |
 | Forks | 451 |
 | Watchers | 40 |
 | Contributors | 57 |
@@ -52,6 +56,8 @@ _Latest snapshot: 2026-10-13 (UTC). Machine-readable: [`data/summary.json`](data
 ### Definitions and caveats
 
 - **Stars** (`daily.csv`) is the repo's `stargazers_count` that day. People can unstar, so this number can go down.
+- **Stars added per day** (`charts/stars_growth.svg`, and the "stars gained" rows above) is the day-over-day change of one daily series: the `daily.csv` snapshots from the first snapshot (2026-09-14) on, `stars.csv` before that. Before snapshots it counts current stargazers by the day they starred; with snapshots it is net of unstars and can be negative. A snapshot is taken around 04:17 UTC, so a snapshot day's change mostly reflects the previous UTC day. Missing snapshot days are filled by linear interpolation, so a collection gap spreads out instead of showing as a spike. The chart covers the full history on a log scale, so a 1/day week stays readable next to the October 2024 launch week (~1,400 stars), and doubling looks the same at any level.
+- **`stars.csv` needs a user token to update.** GitHub returns 401 for unauthenticated stargazer listings and 403 for the workflow's `GITHUB_TOKEN` (REST and GraphQL alike), so the daily job can't refresh it and keeps it as is. Nothing depends on it staying current: the cumulative chart continues from the `daily.csv` snapshots after its last row, and the growth chart and "stars gained" rows use snapshots for every day they exist. Running `collect.py` locally with `GITHUB_TOKEN=$(gh auth token)` fills it in, fetching only the newest pages (a few requests) unless it is far behind.
 - **`stars.csv`** holds only current stargazers. When someone unstars, their row disappears at the next resync, so the cumulative chart shows today's stargazers by the date they starred, not a historical peak. `daily.csv` records what the total actually was on each day. Logins are deliberately not stored: the charts only need timestamps, and there is no reason to publish a permanent, append-only list of who starred.
 - **Watchers** is `subscribers_count` (people watching the repo), not the legacy `watchers_count` alias for stars.
 - **Open issues** excludes pull requests. GitHub's `open_issues_count` includes PRs, so open PRs are counted separately and subtracted.
