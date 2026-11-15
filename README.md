@@ -21,25 +21,25 @@ Embed the star chart elsewhere with:
 ## Latest numbers
 
 <!-- stats:start -->
-_Latest snapshot: 2026-11-14 (UTC). Machine-readable: [`data/summary.json`](data/summary.json)._
+_Latest snapshot: 2026-11-15 (UTC). Machine-readable: [`data/summary.json`](data/summary.json)._
 
 | Metric | Value |
 |---|---:|
-| GitHub stars | 4,477 |
-| Stars gained, last 7 days | 10 |
-| Stars gained, previous 7 days | 0 |
-| Stars gained, last 30 days | 28 |
+| GitHub stars | 4,482 |
+| Stars gained, last 7 days | 12 |
+| Stars gained, previous 7 days | 3 |
+| Stars gained, last 30 days | 31 |
 | Forks | 476 |
 | Watchers | 39 |
 | Contributors | 72 |
 | Open issues | 7 |
-| Open pull requests | 13 |
-| Release asset downloads (gptme/gptme) | 9,752 |
-| Release asset downloads (gptme/gptme-tauri) | 97 |
-| PyPI downloads, 2026-11-13 | 956 |
-| PyPI downloads, last 7 days | 6,109 |
-| PyPI downloads, last 30 days | 23,609 |
-| PyPI downloads tracked since 2026-03-17 | 240,812 |
+| Open pull requests | 11 |
+| Release asset downloads (gptme/gptme) | 9,810 |
+| Release asset downloads (gptme/gptme-tauri) | 102 |
+| PyPI downloads, 2026-11-14 | 463 |
+| PyPI downloads, last 7 days | 5,579 |
+| PyPI downloads, last 30 days | 22,893 |
+| PyPI downloads tracked since 2026-03-17 | 241,275 |
 
 ![GitHub release downloads](charts/downloads.svg)
 <!-- stats:end -->
